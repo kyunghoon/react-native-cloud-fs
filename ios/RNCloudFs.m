@@ -86,7 +86,7 @@ RCT_EXPORT_METHOD(listFiles:(NSDictionary *)options
         
         BOOL isDirectory;
         [fileManager fileExistsAtPath:[target path] isDirectory:&isDirectory];
-
+        
         NSURL *dirPath;
         NSArray *contents;
         if(isDirectory) {
@@ -96,11 +96,11 @@ RCT_EXPORT_METHOD(listFiles:(NSDictionary *)options
             contents = @[[target lastPathComponent]];
             dirPath = [target URLByDeletingLastPathComponent];
         }
-
+        
         if(error) {
             return reject(@"error", error.description, nil);
         }
-
+        
         [contents enumerateObjectsUsingBlock:^(id object, NSUInteger idx, BOOL *stop) {
             NSURL *fileUrl = [dirPath URLByAppendingPathComponent:object];
             
@@ -121,7 +121,7 @@ RCT_EXPORT_METHOD(listFiles:(NSDictionary *)options
                 return;
             
             NSDate* modDate = [attributes objectForKey:NSFileModificationDate];
-
+            
             NSURL *shareUrl = [fileManager URLForPublishingUbiquitousItemAtURL:fileUrl expirationDate:nil error:&error];
             
             [fileData addObject:@{
@@ -817,7 +817,7 @@ RCT_EXPORT_METHOD(getICloudDocumentURLByLocalPath:(NSString *)localPath :(RCTRes
     //BOOL tempCopied = [[self fileManager] copyItemAtPath:[url path] toPath:tempPath error:&err];
     //if(err)NSLog(@"create tmp err,%@, %@", tempPath, err);
     //if (tempCopied) {
-        return tempPath;
+    return tempPath;
     //}else {
     //    return nil;
     //}
@@ -894,7 +894,7 @@ RCT_EXPORT_METHOD(upload:(NSDictionary *)options
     NSURL* dir = [ubiquityURL URLByAppendingPathComponent:destinationPath];
     NSString* dirPath = [dir.path stringByStandardizingPath];
     NSURL *destinationURL = [NSURL fileURLWithPath:dirPath]; // remote
-
+    
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSFileManager *fileManager = [[NSFileManager alloc] init];
         
@@ -926,33 +926,68 @@ RCT_EXPORT_METHOD(download:(NSDictionary *)options
     NSString *scope = [options objectForKey:@"scope"];
     bool documentsFolder = !scope || [scope caseInsensitiveCompare:@"visible"] == NSOrderedSame;
     
-    NSURL *ubiquityURL = documentsFolder ? [self icloudDocumentsDirectory] : [self icloudDirectory];
-    if (!ubiquityURL) {
-        RCTLogTrace(@"Could not retrieve a ubiquityURL");
-        return reject(@"error", [NSString stringWithFormat:@"could access iCloud drive '%@'", destinationPath], nil);
-    }
-    
-    NSURL* dir = [ubiquityURL URLByAppendingPathComponent:destinationPath];
-    NSString* dirPath = [dir.path stringByStandardizingPath];
-    
-    NSURL *sourceURL = [NSURL fileURLWithPath:dirPath];
-
-    NSURL *destinationURL = [self getDocumentURLByICloudPath:[NSString stringWithFormat:@"%@/%@", [[self getICloudDocumentURL] path], destinationPath]];
-
-    NSFileManager *fileManager = [[NSFileManager alloc] init];
-
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        if ([fileManager fileExistsAtPath:[destinationURL path]]) {
-            [fileManager removeItemAtURL:destinationURL error:&err];
-            if (err) return reject(@"error", [err localizedDescription], nil);
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        NSURL *ubiquityURL = documentsFolder ? [self icloudDocumentsDirectory] : [self icloudDirectory];
+        if (!ubiquityURL) {
+            RCTLogTrace(@"Could not retrieve a ubiquityURL");
+            return reject(@"error", [NSString stringWithFormat:@"could access iCloud drive '%@'", destinationPath], nil);
         }
+        
+        NSURL* dir = [ubiquityURL URLByAppendingPathComponent:destinationPath];
+        NSString* path = [dir.path stringByStandardizingPath];
+        
+        NSMetadataQuery *query = [self metaQueryWithPath:path];
 
-        [self createDirectionOfFileURL:destinationURL];
-        [fileManager copyItemAtURL:sourceURL toURL:destinationURL error:&err];
-        if (err) return reject(@"error", [err localizedDescription], nil);
+        [[NSNotificationCenter defaultCenter] addObserverForName:NSMetadataQueryDidUpdateNotification object:query queue:nil usingBlock:^(NSNotification * _Nonnull note) {
+            [[query results] enumerateObjectsUsingBlock:^(id  _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
+                NSString *filename = [obj valueForAttribute:NSMetadataItemFSNameKey];
+                if ([[path lastPathComponent] isEqualToString:filename]) {
+                    NSString* statusString = [obj valueForKey:NSMetadataUbiquitousItemDownloadingStatusKey];
+                    BOOL downloaded = [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusDownloaded] ||
+                        [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusCurrent];
+                    
+                    if (downloaded) {
+                        [query disableUpdates];
+                        resolve(path);
+                    }
+                }
+            }];
+        }];
+        
+        [[NSNotificationCenter defaultCenter] addObserverForName:NSMetadataQueryDidFinishGatheringNotification object:query queue:nil usingBlock:^(NSNotification * _Nonnull note) {
+            [[query results] enumerateObjectsUsingBlock:^(id  _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
+                NSString *filename = [obj valueForAttribute:NSMetadataItemFSNameKey];
+                if ([[path lastPathComponent] isEqualToString:filename]) {
+                    NSString* statusString = [obj valueForKey:NSMetadataUbiquitousItemDownloadingStatusKey];
+                    BOOL downloaded = [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusDownloaded] ||
+                        [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusCurrent];
+                    
+                    if (downloaded) {
+                        [query disableUpdates];
+                        resolve(path);
+                    }
+                }
+            }];
+            
+        }];
+        
+        NSURL *url = [NSURL fileURLWithPath:path];
+        
+        NSError *err = nil;
+        NSString* statusString = NULL;
+        [url getResourceValue:&statusString forKey: NSURLUbiquitousItemDownloadingStatusKey error:&err];
+        if (err)
+            return reject(@"error", [err localizedDescription], nil);
+        
+        BOOL downloaded = [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusDownloaded] ||
+            [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusCurrent];
+        if (downloaded)
+            return resolve(path);
 
-        resolve([destinationURL absoluteString]);
+        [[[NSFileManager alloc] init] startDownloadingUbiquitousItemAtURL:url error:&err];
+        [query startQuery];
+        if (err)
+            return reject(@"error", [err localizedDescription], nil);
     });
 }
 
@@ -963,7 +998,7 @@ RCT_EXPORT_METHOD(exists:(NSDictionary *)options
     NSString *destinationPath = [options objectForKey:@"targetPath"];
     NSString *scope = [options objectForKey:@"scope"];
     bool documentsFolder = !scope || [scope caseInsensitiveCompare:@"visible"] == NSOrderedSame;
-
+    
     NSFileManager* fileManager = [NSFileManager defaultManager];
     
     NSURL *ubiquityURL = documentsFolder ? [self icloudDocumentsDirectory] : [self icloudDirectory];
