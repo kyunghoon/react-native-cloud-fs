@@ -943,9 +943,10 @@ RCT_EXPORT_METHOD(download:(NSDictionary *)options
                 NSString *filename = [obj valueForAttribute:NSMetadataItemFSNameKey];
                 if ([[path lastPathComponent] isEqualToString:filename]) {
                     NSString* statusString = [obj valueForKey:NSMetadataUbiquitousItemDownloadingStatusKey];
-                    BOOL downloaded = [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusDownloaded] ||
-                        [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusCurrent];
-                    
+                    BOOL downloaded =
+                        [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusDownloaded] ||
+                        [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusCurrent] ||
+                        [statusString isEqualToString:NSURLUbiquitousItemDownloadingStatusCurrent];
                     if (downloaded) {
                         [query disableUpdates];
                         resolve(path);
@@ -959,9 +960,10 @@ RCT_EXPORT_METHOD(download:(NSDictionary *)options
                 NSString *filename = [obj valueForAttribute:NSMetadataItemFSNameKey];
                 if ([[path lastPathComponent] isEqualToString:filename]) {
                     NSString* statusString = [obj valueForKey:NSMetadataUbiquitousItemDownloadingStatusKey];
-                    BOOL downloaded = [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusDownloaded] ||
-                        [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusCurrent];
-                    
+                    BOOL downloaded =
+                        [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusDownloaded] ||
+                        [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusCurrent] ||
+                        [statusString isEqualToString:NSURLUbiquitousItemDownloadingStatusCurrent];
                     if (downloaded) {
                         [query disableUpdates];
                         resolve(path);
@@ -979,8 +981,10 @@ RCT_EXPORT_METHOD(download:(NSDictionary *)options
         if (err)
             return reject(@"error", [err localizedDescription], nil);
         
-        BOOL downloaded = [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusDownloaded] ||
-            [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusCurrent];
+        BOOL downloaded =
+            [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusDownloaded] ||
+            [statusString isEqualToString:NSMetadataUbiquitousItemDownloadingStatusCurrent] ||
+            [statusString isEqualToString:NSURLUbiquitousItemDownloadingStatusCurrent];
         if (downloaded)
             return resolve(path);
 
